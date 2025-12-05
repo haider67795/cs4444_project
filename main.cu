@@ -185,10 +185,6 @@ int main(int argc, char** argv) {
       stopTime(&timer);
       printElapsedTime(timer, "    Copy from GPU time");
 
-      // deal with dupes (include this in timing? idk)
-      sortCOOMatrix(cooMatrix_h);
-      mergeDuplicatesCOO(cooMatrix_h);
-
       // Verify
       verify(cooMatrix_h, cooMatrix, quickVerify);
     }

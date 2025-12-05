@@ -43,7 +43,4 @@ void freeCSRMatrixOnGPU(CSRMatrix* csrMatrix);
 
 void copyCSRMatrixToGPU(CSRMatrix* csrMatrix_h, CSRMatrix* csrMatrix_d);
 
-// User Defined Below
-void mergeDuplicatesCOO(COOMatrix* cooMatrix);
-
 #endif

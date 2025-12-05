@@ -114,34 +114,6 @@ void sortCOOMatrix(COOMatrix* cooMatrix) {
   free(dataAux);
 }
 
-// I MADE THIS
-void mergeDuplicatesCOO(COOMatrix* cooMatrix) {
-  if (cooMatrix->numNonzeros == 0) return;
-
-  unsigned int writePos = 0;
-
-  for (unsigned int readPos = 1; readPos < cooMatrix->numNonzeros; ++readPos) {
-    unsigned int rowRead = cooMatrix->rowIdxs[readPos];
-    unsigned int colRead = cooMatrix->colIdxs[readPos];
-    unsigned int rowWrite = cooMatrix->rowIdxs[writePos];
-    unsigned int colWrite = cooMatrix->colIdxs[writePos];
-
-    if (rowRead == rowWrite && colRead == colWrite) {
-      // same (row, col) – accumulate
-      cooMatrix->values[writePos] += cooMatrix->values[readPos];
-    } else {
-      // new (row, col) – advance writePos and copy
-      ++writePos;
-      cooMatrix->rowIdxs[writePos] = rowRead;
-      cooMatrix->colIdxs[writePos] = colRead;
-      cooMatrix->values[writePos] = cooMatrix->values[readPos];
-    }
-  }
-
-  // new number of nonzeros is last written index + 1
-  cooMatrix->numNonzeros = writePos + 1;
-}
-
 COOMatrix* createEmptyCOOMatrixOnGPU(unsigned int numRows, unsigned int numCols,
                                      unsigned int capacity) {
   COOMatrix cooMatrixShadow;
