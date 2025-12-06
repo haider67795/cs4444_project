@@ -3,9 +3,27 @@
 #include "matrix.h"
 
 __global__ void gpu0kernel(CSRMatrix* csrMatrix1_d, CSRMatrix* csrMatrix2_d,
-                           COOMatrix* cooMatrix_d) {
+                           COOMatrix* cooMatrix_d, unsigned int* outputColsPool, float* outputValuesPool) {
+
+  // unsigned int e = blockDim.x * blockIdx.x + threadIdx.x;
+  // if (e < csrMatrix1_d->numNonzeros) {
+  //   float value = csrMatrix1_d->values[e];
+  //   unsigned int col = csrMatrix1_d->colIdxs[e];
+
+  //   for (unsigned int idx = csrMatrix2_d->rowPtrs[col]; idx < csrMatrix2_d->rowPtrs[col+1]; idx ++) {
+
+  //   }
+  // }
+
+
+
+
   int rowId = blockDim.x * blockIdx.x + threadIdx.x;
   if (rowId >= csrMatrix1_d->numRows) return;
+
+  unsigned int *outputCols = &outputColsPool[rowId * csrMatrix1_d->numCols];
+  float *outputValues = &outputValuesPool[rowId * csrMatrix1_d->numCols];
+  int numOutputCols = 0;
 
   unsigned int a_start = csrMatrix1_d->rowPtrs[rowId];
   unsigned int a_end = csrMatrix1_d->rowPtrs[rowId + 1];
@@ -19,17 +37,32 @@ __global__ void gpu0kernel(CSRMatrix* csrMatrix1_d, CSRMatrix* csrMatrix2_d,
     unsigned int b_end = csrMatrix2_d->rowPtrs[b_row + 1];
 
     for (unsigned int b_idx = b_start; b_idx < b_end; ++b_idx) {
-      unsigned int j = csrMatrix2_d->colIdxs[b_idx];
+      unsigned int col2 = csrMatrix2_d->colIdxs[b_idx];
       float b_val = csrMatrix2_d->values[b_idx];
       float prod = a_val * b_val;
 
-      if (prod != 0.0f) {
-        int pos = atomicAdd(&(cooMatrix_d->numNonzeros), 1);
-        cooMatrix_d->rowIdxs[pos] = rowId;
-        cooMatrix_d->colIdxs[pos] = j;
-        cooMatrix_d->values[pos] = prod;
+      float oldVal = outputValues[col2];
+      outputValues[col2] += prod;
+      if (oldVal == 0.0f) {
+        outputCols[numOutputCols++] = col2;
       }
+
+      // if (prod != 0.0f) {
+      //   int pos = atomicAdd(&(cooMatrix_d->numNonzeros), 1);
+      //   cooMatrix_d->rowIdxs[pos] = rowId;
+      //   cooMatrix_d->colIdxs[pos] = col2;
+      //   cooMatrix_d->values[pos] = prod;
+      // }
     }
+  }
+
+  for (unsigned int i = 0; i < numOutputCols; i ++) {
+    unsigned int col = outputCols[i];
+    float value = outputValues[col];
+    unsigned int j = atomicAdd(&cooMatrix_d->numNonzeros, 1);
+    cooMatrix_d->rowIdxs[j] = rowId;
+    cooMatrix_d->colIdxs[j] = col;
+    cooMatrix_d->values[j] = value;
   }
 }
 
@@ -39,7 +72,16 @@ void spmspm_gpu0(CSRMatrix* csrMatrix1, CSRMatrix* csrMatrix2,
   int threadsPerBlock = 1024;
   int numBlocks = (csrMatrix1->numRows + threadsPerBlock - 1) / threadsPerBlock;
 
+  float *outputValues;
+  unsigned int *outputCols;
+  cudaMalloc(&outputValues, csrMatrix1->numRows * csrMatrix1->numCols * sizeof(float));
+  cudaMalloc(&outputCols, csrMatrix1->numRows * csrMatrix1->numCols * sizeof(unsigned int));
+  // cudaMemset(outputCols, 0, csrMatrix1->numRows * csrMatrix1->numCols * sizeof(unsigned int));
+  cudaMemset(outputValues, 0, csrMatrix1->numRows * csrMatrix1->numCols * sizeof(float));
+
   gpu0kernel<<<numBlocks, threadsPerBlock>>>(csrMatrix1_d, csrMatrix2_d,
-                                             cooMatrix_d);
+                                             cooMatrix_d, outputCols, outputValues);
+  
+
   cudaDeviceSynchronize();
 }
