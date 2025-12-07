@@ -1,2 +1,3 @@
 *.o
 spmspm
+data/gen_coo
