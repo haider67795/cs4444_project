@@ -1,3 +1,4 @@
 *.o
 spmspm
 data/gen_coo
+data/matrix2.txt
