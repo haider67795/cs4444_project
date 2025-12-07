@@ -18,8 +18,8 @@ __global__ void gpu1kernel_p1(CSRMatrix* csrMatrix1_d, CSRMatrix* csrMatrix2_d, 
   }
   int row = low;
   
-  unsigned int *outputCols = &outputColsPool[row * csrMatrix1_d->numCols];
-  float *outputValues = &outputValuesPool[row * csrMatrix1_d->numCols];
+  unsigned int *outputCols = &outputColsPool[row * csrMatrix2_d->numCols];
+  float *outputValues = &outputValuesPool[row * csrMatrix2_d->numCols];
   unsigned int *numOutputCols = &numOutputColsPool[row];
 
   float val = csrMatrix1_d->values[idx];
@@ -41,13 +41,16 @@ __global__ void gpu1kernel_p1(CSRMatrix* csrMatrix1_d, CSRMatrix* csrMatrix2_d, 
   
 }
 
-__global__ void gpu1kernel_p2(int mat1NumCols, COOMatrix* cooMatrix_d, unsigned int* outputColsPool, unsigned int* numOutputColsPool, float* outputValuesPool) {
+__global__ void gpu1kernel_p2(int mat2NumCols, int mat1NumRows, COOMatrix* cooMatrix_d, unsigned int* outputColsPool, unsigned int* numOutputColsPool, float* outputValuesPool) {
   int row = blockDim.x * blockIdx.x + threadIdx.x;
-  unsigned int *outputCols = &outputColsPool[row * mat1NumCols];
-  float *outputValues = &outputValuesPool[row * mat1NumCols];
+  if (row >= mat1NumRows) {
+    return;
+  }
+  unsigned int *outputCols = &outputColsPool[row * mat2NumCols];
+  float *outputValues = &outputValuesPool[row * mat2NumCols];
   unsigned int *numOutputCols = &numOutputColsPool[row];
 
-  for (unsigned int i = 0; i < numOutputCols[row]; i ++) {
+  for (unsigned int i = 0; i < *numOutputCols; i ++) {
     unsigned int col = outputCols[i];
     float value = outputValues[col];
     unsigned int j = atomicAdd(&cooMatrix_d->numNonzeros, 1);
@@ -62,11 +65,11 @@ void spmspm_gpu1(CSRMatrix* csrMatrix1, CSRMatrix* csrMatrix2, CSRMatrix* csrMat
 
   
   float *outputValues;
-  cudaMalloc(&outputValues, csrMatrix1->numRows * csrMatrix1->numCols * sizeof(float));
-  cudaMemset(outputValues, 0, csrMatrix1->numRows * csrMatrix1->numCols * sizeof(float));
+  cudaMalloc(&outputValues, csrMatrix1->numRows * csrMatrix2->numCols * sizeof(float));
+  cudaMemset(outputValues, 0, csrMatrix1->numRows * csrMatrix2->numCols * sizeof(float));
   
   unsigned int *outputCols;
-  cudaMalloc(&outputCols, csrMatrix1->numRows * csrMatrix1->numCols * sizeof(unsigned int));
+  cudaMalloc(&outputCols, csrMatrix1->numRows * csrMatrix2->numCols * sizeof(unsigned int));
 
   unsigned int *numOutputCols;
   cudaMalloc(&numOutputCols, csrMatrix1->numRows * sizeof(unsigned int));
@@ -79,7 +82,7 @@ void spmspm_gpu1(CSRMatrix* csrMatrix1, CSRMatrix* csrMatrix2, CSRMatrix* csrMat
   cudaDeviceSynchronize();
 
   numBlocks = (csrMatrix1->numRows + threadsPerBlock - 1) / threadsPerBlock;
-  gpu1kernel_p2<<<numBlocks, threadsPerBlock>>>(csrMatrix1->numCols, cooMatrix_d, outputCols, numOutputCols, outputValues);
+  gpu1kernel_p2<<<numBlocks, threadsPerBlock>>>(csrMatrix2->numCols, csrMatrix1->numRows, cooMatrix_d, outputCols, numOutputCols, outputValues);
   
 
   cudaDeviceSynchronize();
