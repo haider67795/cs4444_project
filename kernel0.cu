@@ -4,20 +4,6 @@
 
 __global__ void gpu0kernel(CSRMatrix* csrMatrix1_d, CSRMatrix* csrMatrix2_d,
                            COOMatrix* cooMatrix_d, unsigned int* outputColsPool, float* outputValuesPool) {
-
-  // unsigned int e = blockDim.x * blockIdx.x + threadIdx.x;
-  // if (e < csrMatrix1_d->numNonzeros) {
-  //   float value = csrMatrix1_d->values[e];
-  //   unsigned int col = csrMatrix1_d->colIdxs[e];
-
-  //   for (unsigned int idx = csrMatrix2_d->rowPtrs[col]; idx < csrMatrix2_d->rowPtrs[col+1]; idx ++) {
-
-  //   }
-  // }
-
-
-
-
   int rowId = blockDim.x * blockIdx.x + threadIdx.x;
   if (rowId >= csrMatrix1_d->numRows) return;
 
@@ -46,13 +32,6 @@ __global__ void gpu0kernel(CSRMatrix* csrMatrix1_d, CSRMatrix* csrMatrix2_d,
       if (oldVal == 0.0f) {
         outputCols[numOutputCols++] = col2;
       }
-
-      // if (prod != 0.0f) {
-      //   int pos = atomicAdd(&(cooMatrix_d->numNonzeros), 1);
-      //   cooMatrix_d->rowIdxs[pos] = rowId;
-      //   cooMatrix_d->colIdxs[pos] = col2;
-      //   cooMatrix_d->values[pos] = prod;
-      // }
     }
   }
 
@@ -73,15 +52,16 @@ void spmspm_gpu0(CSRMatrix* csrMatrix1, CSRMatrix* csrMatrix2,
   int numBlocks = (csrMatrix1->numRows + threadsPerBlock - 1) / threadsPerBlock;
 
   float *outputValues;
-  unsigned int *outputCols;
   cudaMalloc(&outputValues, csrMatrix1->numRows * csrMatrix2->numCols * sizeof(float));
-  cudaMalloc(&outputCols, csrMatrix1->numRows * csrMatrix2->numCols * sizeof(unsigned int));
-  // cudaMemset(outputCols, 0, csrMatrix1->numRows * csrMatrix1->numCols * sizeof(unsigned int));
   cudaMemset(outputValues, 0, csrMatrix1->numRows * csrMatrix2->numCols * sizeof(float));
 
+  unsigned int *outputCols;
+  cudaMalloc(&outputCols, csrMatrix1->numRows * csrMatrix2->numCols * sizeof(unsigned int));
+  
   gpu0kernel<<<numBlocks, threadsPerBlock>>>(csrMatrix1_d, csrMatrix2_d,
                                              cooMatrix_d, outputCols, outputValues);
-  
 
+  unsigned int totalOutputElements;
+  cudaMemcpy(&totalOutputElements, &cooMatrix_d->numNonzeros, sizeof(unsigned int), cudaMemcpyDeviceToHost);
   cudaDeviceSynchronize();
 }

@@ -65,19 +65,6 @@ __global__ void gpu2kernel_p2(int totalOutputElements, int mat2NumCols, int mat1
   cooMatrix_d->values[idx] = outputValuesPool[row * mat2NumCols + col];
 }
 
-/*
-__global__ void simple_scan(unsigned int* arr, unsigned int* buffer, int length) {
-  int idx = blockDim.x * blockIdx.x + threadIdx.x;
-  for (unsigned int i = 1; i < length; i <<= 1) {
-    if (i <= idx) {
-      arr[i] += 
-    }
-  }
-}
-*/
-
-// #include <iostream>
-
 void spmspm_gpu2(CSRMatrix* csrMatrix1, CSRMatrix* csrMatrix2, CSRMatrix* csrMatrix1_d, CSRMatrix* csrMatrix2_d, COOMatrix* cooMatrix_d) {
 
   
