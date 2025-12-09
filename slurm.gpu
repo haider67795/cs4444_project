@@ -1,6 +1,6 @@
 #! /bin/bash
 #SBATCH --gres=gpu:1
-#SBATCH --constraint="a100_40gb"
+#SBATCH --constraint="h100_94gb"
 #SBATCH -n 1
 #SBATCH -t 04:00:00
 #SBATCH -p gpu
@@ -14,8 +14,8 @@ make
 #Code here:
 
 for i in {1..10}; do
-    ./spmspm -0 -1 -2 -f ./data/matrix2.txt >> output_time.txt
-    echo >> output_time.txt
+    ./spmspm -0 -1 -2 -f ./data/matrix2.txt >> output_time_high.txt
+    echo >> output_time_high.txt
 done
 
 echo "done"

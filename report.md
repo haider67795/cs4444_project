@@ -29,7 +29,6 @@ Matrix densities tested:
 - **Medium:** 10,240 × 10,240 matrix with 1,048,576 total nonzeros (128 NNZ per row)  
 - **High:** 10,000 × 10,000 matrix with 10,240,000 total nonzeros (1,024 NNZ per row)
 
-
 ## Normal Density (very sparse)
 
 | GPU Model               | CPU      | Kernel0 | Speedup0 | Kernel1 | Speedup1 | Kernel2 | Speedup2 |
@@ -37,6 +36,7 @@ Matrix densities tested:
 | RTX 4000 Ada (srv04)    | 99.17    | 14.24   | 6.96×    | 12.82   | 7.74×    | 10.93   | 9.07×    |
 | Quadro RTX 4000 (srv10) | 96.02    | 30.78   | 3.12×    | 22.54   | 4.26×    | 17.48   | 5.49×    |
 | A100 (40 GB) (slurm)    | 1937.134 | 63.941  | 30.30×   | 55.527  | 34.89×   | 16.248  | 119.22×  |
+| H100 NVL (slurm)        | 85.774   | 7.823   | 10.96×   | 4.998   | 17.16×   | 3.164   | 27.11×   |
 
 
 ## Medium Density (sparse)
@@ -46,6 +46,7 @@ Matrix densities tested:
 | RTX 4000 Ada (srv04)    | 1498.15    | 167.77  | 8.93×    | 77.55   | 19.32×   | 48.76   | 30.72×   |
 | Quadro RTX 4000 (srv10) | 1311.74    | 365.20  | 3.59×    | 277.60  | 4.73×    | 234.75  | 5.59×    |
 | A100 (40 GB) (slurm)    | 23150.184  | 361.82  | 63.98×   | 281.727 | 82.17×   | 51.213  | 452.04×  |
+| H100 NVL (slurm)        | 1359.747   | 73.469  | 18.51×   | 33.982  | 40.01×   | 20.306  | 66.96×   |
 
 
 ## High Density (moderately dense)
@@ -55,3 +56,4 @@ Matrix densities tested:
 | RTX 4000 Ada (srv04)    | 16198.83    | 8310.49  | 1.95×    | 1477.29  | 10.97×   | 1443.71  | 11.22×   |
 | Quadro RTX 4000 (srv10) | 13580.89    | 16504.34 | 0.82×    | 12118.88 | 1.12×    | 12044.63 | 1.13×    |
 | A100 (40 GB) (slurm)    | 503176.315  | 4469.84  | 112.57×  | 1858.462 | 270.75×  | 1633.064 | 308.12×  |
+| H100 NVL (slurm)        | 12264.641   | 3102.731 | 3.95×    | 548.288  | 22.37×   | 542.678  | 22.60×   |
