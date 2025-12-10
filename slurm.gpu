@@ -14,7 +14,7 @@ make
 #Code here:
 
 for i in {1..10}; do
-    ./spmspm -0 -1 -2 -f ./data/matrix2.txt >> output_time_high.txt
+    ./spmspm -3 -f ./data/matrix2.txt >> output_time_high.txt
     echo >> output_time_high.txt
 done
 

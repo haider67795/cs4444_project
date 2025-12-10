@@ -18,10 +18,19 @@ After this accumulation phase, a second kernel launches one thread per row to fi
 
 The kernel2 version builds on the kernel1 approach but focuses on making the construction of the output COO matrix more efficient. In kernel1, each output row is written using atomic operations to append entries into the COO matrix one by one, which creates contention on a single global counter and limits performance. kernel2 removes this bottleneck by performing an exclusive scan on the host over the array that holds the number of nonzeros in each row. This scan converts the per-row counts into per-row output offsets, giving each row a fixed, non-overlapping range in the COO arrays. With these offsets in place, the second kernel can launch one thread per output element. In order to determine row, threads in the second kernel binary searche through the recently scanned output offsets. They are then able to write each (row, col, value) triple directly into its correct position in the output COO matrix without using any atomics. This change eliminates the hardware serialization that occurred with the previous versions while constructing the output COO matrix. We do notice a speedup here as well, and kernel2 is consistently faster than kernel1 due to this improvement. However, the gains becomes less noticeable as the matrices get denser.
 
+---
+
+# Optimization 3 (kernel3)
+
+Kernel3 is a simplified version of kernel2 that is optimized for the problem specifications of this assignment. The two separate kernels used in kernel2 are combined into a single kernel in kernel3. Instead of launching one kernel to process every nonzero of A and another to write the COO output, kernel3 assigns one thread block to each row of A, and the threads in that block work together to handle all the nonzeros in that row. This makes it straightforward to manage both the partial products and the COO output for each row without extra kernel launches or binary searches.
+
+A key feature of kernel3 is the single atomicAdd used to update the COO matrix’s numNonzeros value. Each block calls atomicAdd only once to reserve a contiguous region of the output arrays, and then the threads in the block write their COO entries directly into that reserved section. This keeps the structure simple and efficient for the sparse matrices used in this project. Kernel3 is the best option for this assignment because we focus specifically on sparse kernels, but as matrices become much denser, kernel2 becomes more effective due to its more evenly distributed work across many threads.
+
+---
 
 # Performance Results with Speedups
 
-All runtime values are measured in milliseconds (ms).
+All runtime values are measured in milliseconds (ms). For each GPU + matrix combination we ran 10 trials, with 5 counting as warmup.
 
 Matrix densities tested:
 
@@ -31,29 +40,29 @@ Matrix densities tested:
 
 ## Normal Density (very sparse)
 
-| GPU Model               | CPU      | Kernel0 | Speedup0 | Kernel1 | Speedup1 | Kernel2 | Speedup2 |
-|-------------------------|----------|---------|----------|---------|----------|---------|----------|
-| RTX 4000 Ada (srv04)    | 99.17    | 14.24   | 6.96×    | 12.82   | 7.74×    | 10.93   | 9.07×    |
-| Quadro RTX 4000 (srv10) | 96.02    | 30.78   | 3.12×    | 22.54   | 4.26×    | 17.48   | 5.49×    |
-| A100 (40 GB) (slurm)    | 1937.134 | 63.941  | 30.30×   | 55.527  | 34.89×   | 16.248  | 119.22×  |
-| H100 NVL (slurm)        | 85.774   | 7.823   | 10.96×   | 4.998   | 17.16×   | 3.164   | 27.11×   |
+| GPU Model                    | CPU      | GPU0    | Speedup0 | GPU1    | Speedup1 | GPU2    | Speedup2 | GPU3    | Speedup3 |
+|------------------------------|----------|---------|----------|---------|----------|---------|----------|---------|----------|
+| RTX 4000 Ada (srv04)         | 99.173   | 14.238  | 6.96×    | 12.816  | 7.74×    | 10.925  | 9.08×    | 6.661   | 14.89×   |
+| Quadro RTX 4000 (srv10)      | 96.017   | 30.777  | 3.12×    | 22.538  | 4.26×    | 17.475  | 5.49×    | 14.586  | 6.58×    |
+| A100 (40 GB) (slurm)         | 1937.134 | 63.941  | 30.30×   | 55.527  | 34.89×   | 16.248  | 119.22×  | 15.942  | 121.50×  |
+| H100 NVL (slurm)             | 85.774   | 7.823   | 10.96×   | 4.998   | 17.16×   | 3.164   | 27.12×   | 2.724   | 31.49×   |
 
 
 ## Medium Density (sparse)
 
-| GPU Model               | CPU        | Kernel0 | Speedup0 | Kernel1 | Speedup1 | Kernel2 | Speedup2 |
-|-------------------------|------------|---------|----------|---------|----------|---------|----------|
-| RTX 4000 Ada (srv04)    | 1498.15    | 167.77  | 8.93×    | 77.55   | 19.32×   | 48.76   | 30.72×   |
-| Quadro RTX 4000 (srv10) | 1311.74    | 365.20  | 3.59×    | 277.60  | 4.73×    | 234.75  | 5.59×    |
-| A100 (40 GB) (slurm)    | 23150.184  | 361.82  | 63.98×   | 281.727 | 82.17×   | 51.213  | 452.04×  |
-| H100 NVL (slurm)        | 1359.747   | 73.469  | 18.51×   | 33.982  | 40.01×   | 20.306  | 66.96×   |
+| GPU Model                    | CPU        | GPU0    | Speedup0 | GPU1    | Speedup1 | GPU2    | Speedup2 | GPU3     | Speedup3 |
+|------------------------------|------------|---------|----------|---------|----------|---------|----------|----------|----------|
+| RTX 4000 Ada (srv04)         | 1498.147   | 167.766 | 8.93×    | 77.552  | 19.32×   | 48.763  | 30.72×   | 36.240   | 41.33×   |
+| Quadro RTX 4000 (srv10)      | 1311.741   | 365.201 | 3.59×    | 277.599 | 4.73×    | 234.752 | 5.59×    | 245.746  | 5.34×    |
+| A100 (40 GB) (slurm)         | 23150.184  | 361.820 | 63.98×   | 281.727 | 82.17×   | 51.213  | 452.04×  | 44.688   | 517.96×  |
+| H100 NVL (slurm)             | 1359.747   | 73.469  | 18.51×   | 33.982  | 40.01×   | 20.306  | 66.96×   | 11.541   | 117.87×  |
 
 
 ## High Density (moderately dense)
 
-| GPU Model               | CPU         | Kernel0  | Speedup0 | Kernel1  | Speedup1 | Kernel2  | Speedup2 |
-|-------------------------|-------------|----------|----------|----------|----------|----------|----------|
-| RTX 4000 Ada (srv04)    | 16198.83    | 8310.49  | 1.95×    | 1477.29  | 10.97×   | 1443.71  | 11.22×   |
-| Quadro RTX 4000 (srv10) | 13580.89    | 16504.34 | 0.82×    | 12118.88 | 1.12×    | 12044.63 | 1.13×    |
-| A100 (40 GB) (slurm)    | 503176.315  | 4469.84  | 112.57×  | 1858.462 | 270.75×  | 1633.064 | 308.12×  |
-| H100 NVL (slurm)        | 12264.641   | 3102.731 | 3.95×    | 548.288  | 22.37×   | 542.678  | 22.60×   |
+| GPU Model                    | CPU         | GPU0     | Speedup0 | GPU1     | Speedup1 | GPU2     | Speedup2 | GPU3      | Speedup3 |
+|------------------------------|-------------|----------|----------|----------|----------|----------|----------|-----------|----------|
+| RTX 4000 Ada (srv04)         | 16198.833   | 8310.489 | 1.95×    | 1477.293 | 10.97×   | 1443.706 | 11.22×   | 2372.053  | 6.83×    |
+| Quadro RTX 4000 (srv10)      | 13580.889   | 16504.342| 0.82×    | 12118.879| 1.12×    | 12044.634| 1.13×    | 15796.518 | 0.86×    |
+| A100 (40 GB) (slurm)         | 503176.315  | 4469.840 | 112.57×  | 1858.462 | 270.75×  | 1633.064 | 308.12×  | 2502.300  | 201.11×  |
+| H100 NVL (slurm)             | 12264.641   | 3102.731 | 3.95×    | 548.288  | 22.37×   | 542.678  | 22.60×   | 816.872   | 15.01×   |

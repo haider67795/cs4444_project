@@ -2,67 +2,44 @@
 #include "common.h"
 #include "timer.h"
 
-__global__ void gpu4kernel_p1(CSRMatrix* csrMatrix1_d, CSRMatrix* csrMatrix2_d, unsigned int* outputColsPool, unsigned int* numOutputColsPool, float* outputValuesPool) {
-  int idx = blockDim.x * blockIdx.x + threadIdx.x;
-  if (idx >= csrMatrix1_d->numNonzeros) return;
 
-  // binary search to find row of element this thread is assigned to
-  int low = 0, high = csrMatrix1_d->numRows;
-  while (low < high - 1) {
-    int mid = (low + high) / 2;
-    if (idx < csrMatrix1_d->rowPtrs[mid]) {
-      high = mid;
-    } else {
-      low = mid;
-    }
-  }
-  int row = low;
-  
+__global__ void gpu4kernel(CSRMatrix* csrMatrix1_d, CSRMatrix* csrMatrix2_d, COOMatrix* cooMatrix_d, unsigned int* outputColsPool, unsigned int* numOutputColsPool, float* outputValuesPool) {
+  int element = threadIdx.x;
+  int row = blockIdx.x;
+
   unsigned int *outputCols = &outputColsPool[row * csrMatrix2_d->numCols];
   float *outputValues = &outputValuesPool[row * csrMatrix2_d->numCols];
   unsigned int *numOutputCols = &numOutputColsPool[row];
 
-  float val = csrMatrix1_d->values[idx];
-  int col = csrMatrix1_d->colIdxs[idx];
-  
-  unsigned int b_start = csrMatrix2_d->rowPtrs[col];
-  unsigned int b_end = csrMatrix2_d->rowPtrs[col + 1];
+  __shared__ int startIdx;;
 
-  for (unsigned int b_idx = b_start; b_idx < b_end; ++b_idx) {
-    unsigned int col2 = csrMatrix2_d->colIdxs[b_idx];
+  if (row < csrMatrix1_d->numRows) {
+    int numElements = csrMatrix1_d->rowPtrs[row+1] - csrMatrix1_d->rowPtrs[row];
+    int offset = csrMatrix1_d->rowPtrs[row];
+    for (unsigned int i = element; i < numElements; i += blockDim.x) {
+        unsigned int col = csrMatrix1_d->colIdxs[offset + i];
+        for (unsigned int b_idx = csrMatrix2_d->rowPtrs[col]; b_idx < csrMatrix2_d->rowPtrs[col+1]; b_idx ++) {
+            unsigned int col2 = csrMatrix2_d->colIdxs[b_idx];
 
-    float oldVal = atomicAdd(&outputValues[col2], val * csrMatrix2_d->values[b_idx]);
-    if (oldVal == 0.0f) {
-      int oldOPCs = atomicAdd(numOutputCols, 1);
-      outputCols[oldOPCs] = col2;
+            float oldVal = atomicAdd(&outputValues[col2], csrMatrix1_d->values[offset + i] * csrMatrix2_d->values[b_idx]);
+            if (oldVal == 0.0f) {
+                int outputIdx = atomicAdd(numOutputCols, 1);
+                outputCols[outputIdx] = col2;
+            }
+        }
+    }
+
+    if (element == 0) {
+        startIdx = atomicAdd(&cooMatrix_d->numNonzeros, *numOutputCols);
+    }
+
+    __syncthreads();
+    for (unsigned int i = element; i < *numOutputCols; i += blockDim.x) {
+        cooMatrix_d->values[startIdx + i] = outputValues[outputCols[i]];
+        cooMatrix_d->colIdxs[startIdx + i] = outputCols[i];
+        cooMatrix_d->rowIdxs[startIdx + i] = row;
     }
   }
-
-  
-}
-
-__global__ void gpu4kernel_p2(int totalOutputElements, int mat2NumCols, int mat1NumRows, COOMatrix* cooMatrix_d, unsigned int* outputColsPool, unsigned int* numOutputColsPool, float* outputValuesPool) {
-  int idx = blockDim.x * blockIdx.x + threadIdx.x;
-  if (idx >= totalOutputElements) { return; }
-
-  // binary search to find row of element this element is assigned to
-  int low = 0, high = mat1NumRows;
-  while (low < high - 1) {
-    int mid = (low + high) / 2;
-    if (idx < numOutputColsPool[mid]) {
-      high = mid;
-    } else {
-      low = mid;
-    }
-  }
-  int row = low;
-
-  int i = idx - numOutputColsPool[row];
-  int col = outputColsPool[row * mat2NumCols + i];
-  
-  cooMatrix_d->rowIdxs[idx] = row;
-  cooMatrix_d->colIdxs[idx] = col;
-  cooMatrix_d->values[idx] = outputValuesPool[row * mat2NumCols + col];
 }
 
 void spmspm_gpu4(CSRMatrix* csrMatrix1, CSRMatrix* csrMatrix2, CSRMatrix* csrMatrix1_d, CSRMatrix* csrMatrix2_d, COOMatrix* cooMatrix_d) {
@@ -77,29 +54,12 @@ void spmspm_gpu4(CSRMatrix* csrMatrix1, CSRMatrix* csrMatrix2, CSRMatrix* csrMat
   cudaMalloc(&numOutputCols, csrMatrix1->numRows * sizeof(unsigned int));
   cudaMemset(numOutputCols, 0, csrMatrix1->numRows * sizeof(unsigned int));
   
-  int threadsPerBlock = 1024;
-  int numBlocks = (csrMatrix1->numNonzeros + threadsPerBlock - 1) / threadsPerBlock;
-  gpu4kernel_p1<<<numBlocks, threadsPerBlock>>>(csrMatrix1_d, csrMatrix2_d, outputCols, numOutputCols, outputValues);
+  int threadsPerBlock = 128;
+  int numBlocks = csrMatrix1->numRows;
+  gpu4kernel<<<numBlocks, threadsPerBlock>>>(csrMatrix1_d, csrMatrix2_d, cooMatrix_d, outputCols, numOutputCols, outputValues);
 
   cudaDeviceSynchronize();
-  unsigned int* numOutputCols_h = (unsigned int*) malloc(csrMatrix1->numRows * sizeof(unsigned int));
-  
-  
-  cudaMemcpy(numOutputCols_h, numOutputCols, csrMatrix1->numRows * sizeof(unsigned int), cudaMemcpyDeviceToHost);
-  // scan numOutputCols array
-  unsigned int totalOutputElements = 0;
-  for (int i = 0; i < csrMatrix1->numRows; i++) {
-    int temp = numOutputCols_h[i];
-    numOutputCols_h[i] = totalOutputElements;
-    totalOutputElements += temp;
-  }
-  cudaMemcpy(numOutputCols, numOutputCols_h, csrMatrix1->numRows * sizeof(unsigned int), cudaMemcpyHostToDevice);
 
-  // set numNonzeros of COO outut matrix
-  cudaMemcpy(&cooMatrix_d->numNonzeros, &totalOutputElements, sizeof(unsigned int), cudaMemcpyHostToDevice);
-
-  numBlocks = (totalOutputElements + threadsPerBlock - 1) / threadsPerBlock;
-  gpu4kernel_p2<<<numBlocks, threadsPerBlock>>>(totalOutputElements, csrMatrix2->numCols, csrMatrix1->numRows, cooMatrix_d, outputCols, numOutputCols, outputValues);
-
-  cudaDeviceSynchronize();
+  int numNonzeros;
+  cudaMemcpy(&numNonzeros, &cooMatrix_d->numNonzeros, sizeof(unsigned int), cudaMemcpyDeviceToHost);
 }
